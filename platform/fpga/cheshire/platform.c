@@ -32,11 +32,37 @@
 #define CHESHIRE_ACLINT_MTIMER_ADDR   (CHESHIRE_CLINT_ADDR + 0xbff8)
 #define CHESHIRE_ACLINT_MTIMECMP_ADDR (CHESHIRE_CLINT_ADDR + 0x4000)
 
-#define CHESHIRE_VGA_ADDR             0x03007000
+#define CHESHIRE_VGA_ADDR             0x03008000
 #define CHESHIRE_FB_ADDR              0xA0000000
-#define CHESHIRE_FB_HEIGHT            480
-#define CHESHIRE_FB_WIDTH             640
-#define CHESHIRE_FB_SIZE			  (CHESHIRE_FB_WIDTH * CHESHIRE_FB_HEIGHT * 2)
+
+//If you change these: remembere to also change the clock speed, as well as the front porch/sync times!
+#define CHESHIRE_PIXTOT_W			  1056
+#define CHESHIRE_PIXTOT_H			  628
+#define CHESHIRE_FB_HEIGHT            600
+#define CHESHIRE_FB_WIDTH  			  800
+
+//The pixtot values are
+#define PIXTOT ((CHESHIRE_PIXTOT_W<<16) + CHESHIRE_PIXTOT_H)
+#define PIXACT ((CHESHIRE_FB_WIDTH<<16) + CHESHIRE_FB_HEIGHT)
+#define FRONT_PORCH ((40<<16) + 1)
+#define SYNC_TIMES (((128<<16) + 4) | (1<<31) | (1<<15))
+//Take some cool looking values
+#define COLS 90
+#define ROWS 35
+
+#define ENABLE_TEXT_MODE 0
+
+//Internal registers offsets
+#define AXI2HDMI_CMD_IF_OFFSET     0x00000008  // Paper's command interface's register size
+#define AXI2HDMI_POINTERQ          ( 0 * AXI2HDMI_CMD_IF_OFFSET)
+#define AXI2HDMI_H_VTOT            ( 1 * AXI2HDMI_CMD_IF_OFFSET)
+#define AXI2HDMI_H_VACTIVE         ( 2 * AXI2HDMI_CMD_IF_OFFSET)
+#define AXI2HDMI_H_VFRONT          ( 3 * AXI2HDMI_CMD_IF_OFFSET)
+#define AXI2HDMI_H_VSYNC           ( 4 * AXI2HDMI_CMD_IF_OFFSET)
+#define AXI2HDMI_POWERREG          ( 5 * AXI2HDMI_CMD_IF_OFFSET)
+#define AXI2HDMI_CURRENT_PTR       ( 6 * AXI2HDMI_CMD_IF_OFFSET)
+#define AXI2HDMI_TEXT_BUFF_PARA    ( 7 * AXI2HDMI_CMD_IF_OFFSET)
+#define AXI2HDMI_CURSOR_FONT_PARA  ( 8 * AXI2HDMI_CMD_IF_OFFSET)
 
 static struct platform_uart_data uart = {
 	CHESHIRE_UART_ADDR,
@@ -87,6 +113,64 @@ static int cheshire_early_init(bool cold_boot)
 	return 0;
 }
 
+static void set_axi2hdmi_testpattern() {
+	// Generate test pattern for screen
+	uint32_t RGB[8] = {
+		0xffffff, //White
+		0xffff00, //Yellow
+		0x00ffff, //Cyan
+		0x00ff00, //Green
+		0xff00ff, //Magenta
+		0xff0000, //Red
+		0x0000ff, //Blue
+		0x000000, //Black
+	};
+	int col_width = CHESHIRE_FB_WIDTH / 8;
+
+    volatile uint8_t *fb = (volatile uint16_t*)(void*)(uintptr_t) CHESHIRE_FB_ADDR;
+
+    for (int y=0; y < CHESHIRE_FB_HEIGHT; y++) {
+        for (int x=0; x < CHESHIRE_FB_WIDTH; x++) {
+			uint32_t rgb = RGB[x / col_width];
+			//TODO use pixel packed format
+			fb[0] = rgb;
+			fb[1] = rgb >> 8;
+			fb[2] = rgb >> 16;
+
+			fb += 3;
+        }
+    }
+	//Make sure that changes are written to memory
+	fence();
+}
+
+static volatile uint32_t * reg32(uint32_t base_addr, uint32_t byte_offset) {
+	return (volatile uint32_t *) (base_addr + byte_offset);
+}
+
+//Sets a starting image, inits the peripheral and starts the peripheral
+static void init_axi2hdmi() {
+    *reg32(CHESHIRE_VGA_ADDR, AXI2HDMI_H_VTOT) = PIXTOT;
+
+    *reg32(CHESHIRE_VGA_ADDR, AXI2HDMI_H_VACTIVE) = PIXACT;
+
+    *reg32(CHESHIRE_VGA_ADDR, AXI2HDMI_H_VFRONT) = FRONT_PORCH;
+
+    *reg32(CHESHIRE_VGA_ADDR, AXI2HDMI_H_VSYNC) = SYNC_TIMES;
+    
+    *reg32(CHESHIRE_VGA_ADDR, AXI2HDMI_TEXT_BUFF_PARA) = (COLS << 16) | ROWS;
+
+	//Do NOT set the colors for text mode; there is a default color palette, which is perfectly fine
+
+    //Set next frame as text mode, if in text mode
+    *reg32(CHESHIRE_VGA_ADDR, AXI2HDMI_POWERREG) = (0 | (ENABLE_TEXT_MODE << 16));
+
+    //Bitmask, so that the framebuffer is used over and over again and not discarded!
+    *reg32(CHESHIRE_VGA_ADDR, AXI2HDMI_POINTERQ) = CHESHIRE_FB_ADDR | 0b010;
+
+    *reg32(CHESHIRE_VGA_ADDR, AXI2HDMI_POWERREG) = (1 | (ENABLE_TEXT_MODE << 16));
+}
+
 /*
  * Cheshire platform final initialization.
  */
@@ -100,62 +184,10 @@ static int cheshire_final_init(bool cold_boot)
 	fdt = fdt_get_address();
 	fdt_fixups(fdt);
 
-	// Generate test pattern for screen
-	uint16_t RGB[8] = {
-		0xffff, //White
-		0xffe0, //Yellow
-		0x07ff, //Cyan
-		0x07E0, //Green
-		0xf81f, //Magenta
-		0xF800, //Red
-		0x001F, //Blue
-		0x0000, //Black
-	};
-	int col_width = CHESHIRE_FB_WIDTH / 8;
+	set_axi2hdmi_testpattern();
 
-    volatile uint16_t *fb = (volatile uint16_t*)(void*)(uintptr_t) CHESHIRE_FB_ADDR;
-
-    for (int i=0; i < CHESHIRE_FB_HEIGHT; i++) {
-        for (int j=0; j < CHESHIRE_FB_WIDTH; j++) {
-            fb[CHESHIRE_FB_WIDTH * i + j] = RGB[j / col_width];
-        }
-    }
-
-	// Pointer array to acces VGA control registers.
-	// Every index step increases the pointer by 32bit
-	volatile uint32_t *vga = (volatile uint32_t*)(void*)(uintptr_t) CHESHIRE_VGA_ADDR;
-
-    // Initialize VGA controller and populate framebuffer
-    // Clk div
-    vga[1] = 0x2;        // 8 for Sim, 2 for FPGA
-    
-    // Hori: Visible, Front porch, Sync, Back porch
-    vga[2] = 0x280;
-    vga[3] = 0x10;
-    vga[4] = 0x60;
-    vga[5] = 0x30;
-
-    // Vert: Visible, Front porch, Sync, Back porch
-    vga[6] = 0x1e0;
-    vga[7] = 0xA;
-    vga[8] = 0x2;
-    vga[9] = 0x21;
-
-    // Framebuffer start address
-    vga[10] = CHESHIRE_FB_ADDR;     // Low 32 bit
-    vga[11] = 0x0;            // High 32 bit
-
-    // Framebuffer size
-    vga[12] = CHESHIRE_FB_WIDTH*CHESHIRE_FB_HEIGHT*2;      // 640*480 pixel a 2 byte/pixel
-
-    // Burst length
-    vga[13] = 16;           // 64b * 16 = 128B Bursts
-
-    // 0: Enable
-    // 1: Hsync polarity (Active Low  = 0)
-    // 2: Vsync polarity (Active Low  = 0)
-    vga[0] = 0x1;    
-
+	init_axi2hdmi();
+	
 	return 0;
 }
 
