@@ -32,20 +32,24 @@
 #define CHESHIRE_ACLINT_MTIMER_ADDR   (CHESHIRE_CLINT_ADDR + 0xbff8)
 #define CHESHIRE_ACLINT_MTIMECMP_ADDR (CHESHIRE_CLINT_ADDR + 0x4000)
 
-#define CHESHIRE_VGA_ADDR             0x03008000
+//Weeeee we hard code
+#define CHESHIRE_BASE_REGS 0x03000000
+#define CHESHIRE_VGA_SELECT_REG_OFFSET 0x5c
+
+#define CHESHIRE_VGA_ADDR             0x03009000
 #define CHESHIRE_FB_ADDR              0xA0000000
 
 //If you change these: remembere to also change the clock speed, as well as the front porch/sync times!
-#define CHESHIRE_PIXTOT_W			  1056
-#define CHESHIRE_PIXTOT_H			  628
+#define CHESHIRE_PIXTOT_W			  1040
+#define CHESHIRE_PIXTOT_H			  666
 #define CHESHIRE_FB_HEIGHT            600
 #define CHESHIRE_FB_WIDTH  			  800
 
 //The pixtot values are
 #define PIXTOT ((CHESHIRE_PIXTOT_W<<16) + CHESHIRE_PIXTOT_H)
 #define PIXACT ((CHESHIRE_FB_WIDTH<<16) + CHESHIRE_FB_HEIGHT)
-#define FRONT_PORCH ((40<<16) + 1)
-#define SYNC_TIMES (((128<<16) + 4) | (1<<31) | (1<<15))
+#define FRONT_PORCH ((56<<16) + 37)
+#define SYNC_TIMES (((120<<16) + 6) | (1<<31) | (1<<15))
 //Take some cool looking values
 #define COLS 90
 #define ROWS 35
@@ -125,13 +129,13 @@ static void set_axi2hdmi_testpattern() {
 		0x0000ff, //Blue
 		0x000000, //Black
 	};
-	int col_width = CHESHIRE_FB_WIDTH / 8;
+	int row_width = CHESHIRE_FB_HEIGHT / 8;
 
-    volatile uint8_t *fb = (volatile uint16_t*)(void*)(uintptr_t) CHESHIRE_FB_ADDR;
+    volatile uint8_t *fb = (volatile uint8_t*)(void*)(uintptr_t) CHESHIRE_FB_ADDR;
 
     for (int y=0; y < CHESHIRE_FB_HEIGHT; y++) {
         for (int x=0; x < CHESHIRE_FB_WIDTH; x++) {
-			uint32_t rgb = RGB[x / col_width];
+			uint32_t rgb = RGB[y / row_width];
 			//TODO use pixel packed format
 			fb[0] = rgb;
 			fb[1] = rgb >> 8;
@@ -140,16 +144,16 @@ static void set_axi2hdmi_testpattern() {
 			fb += 3;
         }
     }
-	//Make sure that changes are written to memory
-	fence();
 }
 
 static volatile uint32_t * reg32(uint32_t base_addr, uint32_t byte_offset) {
-	return (volatile uint32_t *) (base_addr + byte_offset);
+	return (volatile uint32_t *)(void*)(uintptr_t)(base_addr + byte_offset);
 }
 
 //Sets a starting image, inits the peripheral and starts the peripheral
 static void init_axi2hdmi() {
+	*reg32(CHESHIRE_BASE_REGS, CHESHIRE_VGA_SELECT_REG_OFFSET) = 0x1;
+
     *reg32(CHESHIRE_VGA_ADDR, AXI2HDMI_H_VTOT) = PIXTOT;
 
     *reg32(CHESHIRE_VGA_ADDR, AXI2HDMI_H_VACTIVE) = PIXACT;
@@ -184,9 +188,9 @@ static int cheshire_final_init(bool cold_boot)
 	fdt = fdt_get_address();
 	fdt_fixups(fdt);
 
-	set_axi2hdmi_testpattern();
-
 	init_axi2hdmi();
+
+	set_axi2hdmi_testpattern();
 	
 	return 0;
 }
