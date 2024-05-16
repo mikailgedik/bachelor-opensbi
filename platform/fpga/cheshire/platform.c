@@ -35,24 +35,25 @@
 //Weeeee we hard code
 #define CHESHIRE_BASE_REGS 0x03000000
 #define CHESHIRE_VGA_SELECT_REG_OFFSET 0x5c
+#define CHESHIRE_AXI2HDMI_CLOCK_CONFIG_REG_OFFSET 0x60
 
 #define CHESHIRE_VGA_ADDR             0x03009000
 #define CHESHIRE_FB_ADDR              0xA0000000
 
 //If you change these: remembere to also change the clock speed, as well as the front porch/sync times!
-#define CHESHIRE_PIXTOT_W			  1040
-#define CHESHIRE_PIXTOT_H			  666
-#define CHESHIRE_FB_HEIGHT            600
+#define CHESHIRE_PIXTOT_W			  1056
+#define CHESHIRE_PIXTOT_H			  628
 #define CHESHIRE_FB_WIDTH  			  800
+#define CHESHIRE_FB_HEIGHT            600
 
 //The pixtot values are
 #define PIXTOT ((CHESHIRE_PIXTOT_W<<16) + CHESHIRE_PIXTOT_H)
 #define PIXACT ((CHESHIRE_FB_WIDTH<<16) + CHESHIRE_FB_HEIGHT)
-#define FRONT_PORCH ((56<<16) + 37)
-#define SYNC_TIMES (((120<<16) + 6) | (1<<31) | (1<<15))
+#define FRONT_PORCH ((40<<16) + 1)
+#define SYNC_TIMES (((128<<16) + 4) | (1<<31) | (1<<15))
 //Take some cool looking values
-#define COLS 90
-#define ROWS 35
+#define COLS 100
+#define ROWS 36
 
 #define ENABLE_TEXT_MODE 0
 
@@ -67,6 +68,9 @@
 #define AXI2HDMI_CURRENT_PTR       ( 6 * AXI2HDMI_CMD_IF_OFFSET)
 #define AXI2HDMI_TEXT_BUFF_PARA    ( 7 * AXI2HDMI_CMD_IF_OFFSET)
 #define AXI2HDMI_CURSOR_FONT_PARA  ( 8 * AXI2HDMI_CMD_IF_OFFSET)
+#define FIFO_REFILL_THRESHOLD	   ( 9 * AXI2HDMI_CMD_IF_OFFSET)
+#define FIFO_MAX_REFILL_AMOUNT     ( 10 * AXI2HDMI_CMD_IF_OFFSET)
+#define PIXEL_FORMAT (11 * AXI2HDMI_CMD_IF_OFFSET)
 
 static struct platform_uart_data uart = {
 	CHESHIRE_UART_ADDR,
@@ -153,6 +157,12 @@ static volatile uint32_t * reg32(uint32_t base_addr, uint32_t byte_offset) {
 //Sets a starting image, inits the peripheral and starts the peripheral
 static void init_axi2hdmi() {
 	*reg32(CHESHIRE_BASE_REGS, CHESHIRE_VGA_SELECT_REG_OFFSET) = 0x1;
+	
+	*reg32(CHESHIRE_BASE_REGS, CHESHIRE_AXI2HDMI_CLOCK_CONFIG_REG_OFFSET) = 0x0100;
+
+	//Values determined by trying
+    *reg32(CHESHIRE_VGA_ADDR, FIFO_REFILL_THRESHOLD) = 25;
+    *reg32(CHESHIRE_VGA_ADDR, FIFO_MAX_REFILL_AMOUNT) = 100;
 
     *reg32(CHESHIRE_VGA_ADDR, AXI2HDMI_H_VTOT) = PIXTOT;
 
