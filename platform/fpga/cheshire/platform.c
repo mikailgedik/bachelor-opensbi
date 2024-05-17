@@ -37,7 +37,7 @@
 #define CHESHIRE_VGA_SELECT_REG_OFFSET 0x5c
 #define CHESHIRE_AXI2HDMI_CLOCK_CONFIG_REG_OFFSET 0x60
 
-#define CHESHIRE_VGA_ADDR             0x03009000
+#define CHESHIRE_VGA_ADDR             0x0300A000
 #define CHESHIRE_FB_ADDR              0xA0000000
 
 //If you change these: remembere to also change the clock speed, as well as the front porch/sync times!
@@ -46,7 +46,7 @@
 #define CHESHIRE_FB_WIDTH  			  800
 #define CHESHIRE_FB_HEIGHT            600
 
-//The pixtot values are
+//Currently programmed fixed at 800x600@60Hz
 #define PIXTOT ((CHESHIRE_PIXTOT_W<<16) + CHESHIRE_PIXTOT_H)
 #define PIXACT ((CHESHIRE_FB_WIDTH<<16) + CHESHIRE_FB_HEIGHT)
 #define FRONT_PORCH ((40<<16) + 1)
