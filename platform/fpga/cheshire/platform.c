@@ -121,6 +121,11 @@ static int cheshire_early_init(bool cold_boot)
 	return 0;
 }
 
+static volatile uint32_t * reg32(uint32_t base_addr, uint32_t byte_offset) {
+	return (volatile uint32_t *)(void*)(uintptr_t)(base_addr + byte_offset);
+}
+
+/*
 static void set_axi2hdmi_testpattern() {
 	// Generate test pattern for screen
 	uint32_t RGB[8] = {
@@ -148,10 +153,6 @@ static void set_axi2hdmi_testpattern() {
 			fb += 3;
         }
     }
-}
-
-static volatile uint32_t * reg32(uint32_t base_addr, uint32_t byte_offset) {
-	return (volatile uint32_t *)(void*)(uintptr_t)(base_addr + byte_offset);
 }
 
 //Sets a starting image, inits the peripheral and starts the peripheral
@@ -184,6 +185,7 @@ static void init_axi2hdmi() {
 
     *reg32(CHESHIRE_VGA_ADDR, AXI2HDMI_POWERREG) = (1 | (ENABLE_TEXT_MODE << 16));
 }
+*/
 
 /*
  * Cheshire platform final initialization.
@@ -198,9 +200,14 @@ static int cheshire_final_init(bool cold_boot)
 	fdt = fdt_get_address();
 	fdt_fixups(fdt);
 
-	init_axi2hdmi();
+	//Only init part of cheshire to somehow get axi2hdmi to work
+	*reg32(CHESHIRE_BASE_REGS, CHESHIRE_VGA_SELECT_REG_OFFSET) = 0x1;	
+	*reg32(CHESHIRE_BASE_REGS, CHESHIRE_AXI2HDMI_CLOCK_CONFIG_REG_OFFSET) = 0x0100;
 
-	set_axi2hdmi_testpattern();
+	//Do not init; init is only for graphics mode, not text mode
+	//Text mode init is done in custom driver
+	//init_axi2hdmi();
+	//set_axi2hdmi_testpattern();
 	
 	return 0;
 }
